@@ -22,7 +22,7 @@ export default function HomePage() {
       }
 
       const data = await response.json();
-      setPosts(data);
+      setPosts(data.posts || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
       console.error("Error fetching posts:", err);
