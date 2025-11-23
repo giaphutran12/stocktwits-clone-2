@@ -248,8 +248,9 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Step 4: Return the posts array
-    return NextResponse.json(posts, { status: 200 });
+    // Step 4: Return the posts array wrapped in an object
+    // Frontend expects { posts: [...] } format, not raw array
+    return NextResponse.json({ posts }, { status: 200 });
 
   } catch (error) {
     console.error('Error fetching posts:', error);
