@@ -5,6 +5,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStockQuote } from "@/lib/yahoo-finance";
 
+// Force Node.js runtime (required for yahoo-finance2 package)
+export const runtime = "nodejs";
+
 // The { params } object contains URL parameters - in this case, the stock symbol
 export async function GET(
   request: NextRequest,

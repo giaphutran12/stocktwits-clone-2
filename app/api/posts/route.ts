@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { auth, clerkClient } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 import { parseTickers } from '@/lib/parse-tickers';
 import { Sentiment } from '@/lib/generated/prisma';
@@ -39,6 +39,25 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       );
     }
+
+    // Step 1.5: Ensure user exists in database
+    // This handles the case where a user is authenticated with Clerk but hasn't
+    // been synced to our database yet (webhook hasn't fired or isn't set up)
+    // We use upsert() which means: "update if exists, create if doesn't"
+    const client = await clerkClient();
+    const clerkUser = await client.users.getUser(userId);
+
+    await db.user.upsert({
+      where: { id: userId },
+      update: {}, // Don't update if they already exist
+      create: {
+        id: userId,
+        email: clerkUser.emailAddresses[0]?.emailAddress || '',
+        username: clerkUser.username || clerkUser.id,
+        name: `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || null,
+        imageUrl: clerkUser.imageUrl || null,
+      },
+    });
 
     // Step 2: Parse and validate request body
     const body = await req.json();

@@ -5,6 +5,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getHistoricalData, TimeRange } from "@/lib/yahoo-finance";
 
+// Force Node.js runtime (required for yahoo-finance2 package)
+export const runtime = "nodejs";
+
 const validRanges: TimeRange[] = ["1d", "5d", "1mo", "3mo", "6mo", "1y", "5y"];
 
 export async function GET(
