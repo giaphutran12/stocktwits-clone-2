@@ -3,15 +3,20 @@
 // capture whatever comes after /stock/ and pass it as a parameter.
 // Example: /stock/AAPL -> symbol = "AAPL"
 
+// This is now a Server Component (no "use client" directive)
+// Server Components can use generateMetadata but cannot use hooks
+// All client-side logic has been moved to StockPostsSection
+
 import { StockChart } from "@/components/stock/stock-chart";
 import { StockStats } from "@/components/stock/stock-stats";
+import { StockPostsSection } from "@/components/stock/stock-posts-section";
 
-// This is a Server Component by default. The params come from the URL.
 export default async function StockPage({
   params,
 }: {
   params: Promise<{ symbol: string }>;
 }) {
+  // In Server Components, we await the params promise
   const { symbol } = await params;
   const upperSymbol = symbol.toUpperCase();
 
@@ -30,15 +35,8 @@ export default async function StockPage({
         </div>
       </section>
 
-      {/* Placeholder for community posts (Phase 3) */}
-      <section>
-        <h2 className="text-lg font-semibold mb-4">
-          Community Posts about ${upperSymbol}
-        </h2>
-        <div className="bg-gray-50 border border-dashed rounded-lg p-8 text-center text-gray-500">
-          Posts will appear here once we build the post system (Phase 3)
-        </div>
-      </section>
+      {/* Community posts section - delegated to a Client Component */}
+      <StockPostsSection symbol={upperSymbol} />
     </main>
   );
 }

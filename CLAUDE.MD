@@ -135,8 +135,16 @@ The user&apos;s main goal is to **learn and grow as a developer**. Every interac
 - Use `&apos;` instead of `'` in JSX to avoid linting errors
 - **ALWAYS** run `npm run build` at task completion (main agent only, NOT subagents)
 - Task is finished when: all todos done + build succeeds
-- Use subagents/parallel agents when appropriate, but quality > quantity
 - **Subagent rules**: Subagents should NOT run builds - only make changes and report back
+
+### 🚀 Parallel Agents & Subagents (IMPORTANT)
+**ALWAYS delegate to subagents and use parallel execution when possible** - this saves context window for the main agent so we can work together longer before needing `/compact`:
+- **Exploration tasks**: Use `subagent_type=Explore` for codebase exploration, searching files, understanding structure
+- **Independent tasks**: Launch multiple subagents in parallel when tasks don&apos;t depend on each other (e.g., creating multiple components, multiple API routes)
+- **Research tasks**: Delegate documentation lookups, package searches, and web research to subagents
+- **Planning tasks**: Use `subagent_type=Plan` when you need to create detailed implementation plans
+- **Rule of thumb**: If a task requires reading many files or extensive searching, delegate it to a subagent
+- **Main agent focus**: The main agent should orchestrate, make decisions, and handle user communication - offload heavy lifting to subagents
 
 ---
 
