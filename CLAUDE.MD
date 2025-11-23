@@ -137,6 +137,31 @@ The user&apos;s main goal is to **learn and grow as a developer**. Every interac
 - Task is finished when: all todos done + build succeeds
 - **Subagent rules**: Subagents should NOT run builds - only make changes and report back
 
+### 🔒 SECURITY - PRE-COMMIT CHECKLIST (CRITICAL)
+**BEFORE EVERY COMMIT, YOU MUST:**
+1. **Review EVERY file being committed** - Check `git diff` output
+2. **Scan for secrets/credentials:**
+   - API keys (starts with `pk_`, `sk_`, `AIza`, etc.)
+   - Database URLs (contains passwords or connection strings)
+   - Webhook secrets (starts with `whsec_`)
+   - Email addresses
+   - Any hardcoded passwords or tokens
+3. **NEVER commit these file types with secrets:**
+   - Documentation files (.md, .txt) with example credentials
+   - Debug/log files with API responses
+   - Config files with real values instead of placeholders
+   - Database dumps or exports
+4. **Use placeholders in docs:**
+   - ❌ WRONG: `CLERK_SECRET_KEY=sk_test_abc123xyz`
+   - ✅ RIGHT: `CLERK_SECRET_KEY=sk_test_your_key_here`
+5. **If secrets are accidentally committed:**
+   - Immediately revert the commit
+   - Rotate ALL exposed credentials
+   - Use `git filter-branch` or BFG to remove from history
+   - Force push to overwrite remote
+
+**Remember:** Once pushed to GitHub, secrets are compromised FOREVER (even after deletion)
+
 ### 🚀 Parallel Agents & Subagents (IMPORTANT)
 **ALWAYS delegate to subagents and use parallel execution when possible** - this saves context window for the main agent so we can work together longer before needing `/compact`:
 - **Exploration tasks**: Use `subagent_type=Explore` for codebase exploration, searching files, understanding structure
