@@ -41,13 +41,20 @@ GEMINI_API_KEY=
 - [x] Stock stats component (`components/stock/stock-stats.tsx`)
 - [x] Stock page (`/stock/[symbol]`)
 
-### 🔲 Phase 3: Post System (NOT STARTED)
-- [ ] Post form component (with $TICKER parsing, sentiment selector)
-- [ ] Post card component
-- [ ] API routes: POST /api/posts, GET /api/posts
-- [ ] Clerk webhook to sync users to database
-- [ ] Display posts on stock pages filtered by ticker
-- [ ] Main feed page showing all posts
+### ✅ Phase 3: Post System (COMPLETE)
+- [x] Post form component (with $TICKER parsing, sentiment selector) - `components/post/post-form.tsx`
+- [x] Post card component - `components/post/post-card.tsx`
+- [x] Post list component - `components/post/post-list.tsx`
+- [x] Parse-tickers utility function - `lib/parse-tickers.ts`
+- [x] API routes: POST /api/posts, GET /api/posts - `app/api/posts/route.ts`
+- [x] Clerk webhook to sync users to database - `app/api/webhooks/clerk/route.ts`
+- [x] Inline user sync fallback in POST /api/posts (upsert logic using clerkClient)
+- [x] Display posts on stock pages filtered by ticker - `components/stock/stock-posts-section.tsx`
+- [x] Main feed page showing all posts - `app/page.tsx`
+- [x] **Production fixes:**
+  - [x] Added `postinstall: "prisma generate"` to package.json
+  - [x] Added `runtime = "nodejs"` to stock API routes for yahoo-finance2 compatibility
+  - [x] Installed `svix` package for webhook verification
 
 ### 🔲 Phase 4: LLM Integration (NOT STARTED)
 - [ ] Gemini integration for post analysis
@@ -78,14 +85,23 @@ GEMINI_API_KEY=
 - `app/api/stocks/[symbol]/route.ts` - Stock quote API
 - `app/api/stocks/[symbol]/history/route.ts` - Historical data API
 
+### Posts
+- `lib/parse-tickers.ts` - Utility functions (parseTickers, highlightTickers, isValidTicker)
+- `components/post/post-form.tsx` - Post creation form with sentiment + ticker detection
+- `components/post/post-card.tsx` - Post display component
+- `components/post/post-list.tsx` - Post list wrapper with loading/error states
+- `app/api/posts/route.ts` - POST (create) and GET (fetch) posts endpoints
+- `app/api/webhooks/clerk/route.ts` - Clerk webhook handler for user sync
+
 ### Components
 - `components/stock/stock-chart.tsx` - Interactive price chart
 - `components/stock/stock-stats.tsx` - Stock statistics display
+- `components/stock/stock-posts-section.tsx` - Client component for stock page posts (filtered by ticker)
 - `components/ui/*` - shadcn/ui components
 
 ### Pages
-- `app/page.tsx` - Home page (placeholder)
-- `app/stock/[symbol]/page.tsx` - Stock detail page
+- `app/page.tsx` - Home page (main feed with all posts)
+- `app/stock/[symbol]/page.tsx` - Stock detail page (chart + stats + posts)
 
 ---
 
@@ -176,3 +192,14 @@ The user&apos;s main goal is to **learn and grow as a developer**. Every interac
 ## Known Issues / Notes
 - Next.js 16 shows warning about "middleware" being deprecated in favor of "proxy" - ignore for now, still works
 - `yahoo-finance2` v3.x requires instantiation: `new YahooFinance()` (see lib/yahoo-finance.ts)
+
+### Production Deployment Issues (RESOLVED)
+1. **Stock APIs returning 404**: Fixed by adding `runtime = "nodejs"` to stock API routes (yahoo-finance2 requires Node.js runtime, not Edge)
+2. **Prisma Client not found**: Fixed by adding `"postinstall": "prisma generate"` to package.json
+3. **New users cannot post**: Fixed by adding inline user sync using clerkClient in POST /api/posts (fallback when webhook isn't set up)
+
+### Security Incident (CRITICAL LEARNING)
+- **NEVER commit credentials/API keys** - Even if deleted, they remain in git history
+- User must rotate ALL credentials after accidental exposure (Clerk, Database URL, Gemini API key, Webhook secret)
+- Always review `git diff` before committing - check for secrets in .md files, debug guides, or config files
+- Use placeholders in documentation: `CLERK_SECRET_KEY=sk_test_your_key_here` NOT real keys
