@@ -1,0 +1,120 @@
+// Prisma Schema - This file defines your database structure
+// Think of it like a blueprint for your database tables
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User - Synced with Clerk (Clerk handles auth, we store extra user data here)
+model User {
+  id        String   @id // This will be the Clerk user ID
+  email     String   @unique
+  username  String?  @unique
+  name      String?
+  imageUrl  String?
+  bio       String?
+
+  // Reputation system
+  reputation Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations - A user can have many posts, likes, comments
+  posts     Post[]
+  likes     Like[]
+  comments  Comment[]
+}
+
+// Post - A stock-related post (like a tweet but for stocks)
+model Post {
+  id        String   @id @default(cuid())
+  content   String   // The post text (may contain $TICKER mentions)
+
+  // Sentiment - How the user feels about the stock(s) mentioned
+  sentiment Sentiment @default(NEUTRAL)
+
+  // Author relation
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  // Stock relations - A post can mention multiple stocks
+  tickers   PostTicker[]
+
+  // Engagement
+  likes     Like[]
+  comments  Comment[]
+
+  // LLM-generated metadata (filled in async by Gemini)
+  qualityScore  Float?   // 0-1 score of post quality
+  insightType   String?  // "fundamental", "technical", "macro", "earnings", "risk"
+  sector        String?  // Extracted sector
+  summary       String?  // LLM-generated summary
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([authorId])
+  @@index([createdAt])
+}
+
+// Sentiment enum - Bullish, Bearish, or Neutral
+enum Sentiment {
+  BULLISH
+  BEARISH
+  NEUTRAL
+}
+
+// PostTicker - Junction table linking posts to stock tickers
+// (Many-to-many: one post can mention many stocks, one stock can be in many posts)
+model PostTicker {
+  id       String @id @default(cuid())
+
+  postId   String
+  post     Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  symbol   String // e.g., "AAPL", "TSLA"
+
+  @@unique([postId, symbol])
+  @@index([symbol])
+}
+
+// Like - Tracks who liked what post
+model Like {
+  id       String   @id @default(cuid())
+
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  postId   String
+  post     Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  // Each user can only like a post once
+  @@unique([userId, postId])
+  @@index([postId])
+}
+
+// Comment - Comments on posts
+model Comment {
+  id       String   @id @default(cuid())
+  content  String
+
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  postId   String
+  post     Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([postId])
+}
