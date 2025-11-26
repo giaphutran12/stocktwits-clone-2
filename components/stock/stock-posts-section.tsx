@@ -10,6 +10,7 @@ import { PostForm } from "@/components/post/post-form";
 import { PostList } from "@/components/post/post-list";
 
 // Type definition for posts (matches what the API returns)
+// Includes AI analysis fields from Gemini
 type Post = {
   id: string;
   content: string;
@@ -26,6 +27,11 @@ type Post = {
     likes: number;
     comments: number;
   };
+  // AI Analysis fields (populated async by Gemini)
+  qualityScore: number | null;
+  insightType: string | null;
+  sector: string | null;
+  summary: string | null;
 };
 
 interface StockPostsSectionProps {

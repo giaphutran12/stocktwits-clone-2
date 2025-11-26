@@ -1,13 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import {
-  ClerkProvider,
-  SignInButton,
-  SignUpButton,
-  SignedIn,
-  SignedOut,
-  UserButton,
-} from "@clerk/nextjs";
+import { ClerkProvider } from "@clerk/nextjs";
+import { Header } from "@/components/layout/header";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -32,35 +26,14 @@ export default function RootLayout({
 }>) {
   return (
     // ClerkProvider wraps your entire app and provides authentication context.
-    // Think of it like a "manager" that keeps track of who&apos;s logged in.
+    // Think of it like a "manager" that keeps track of who is logged in.
     <ClerkProvider>
       <html lang="en">
         <body
           className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         >
-          {/* Header with auth buttons */}
-          <header className="flex items-center justify-between p-4 border-b">
-            <h1 className="text-xl font-bold">StockTwits Clone</h1>
-            <div className="flex items-center gap-4">
-              {/* SignedOut = only shows when user is NOT logged in */}
-              <SignedOut>
-                <SignInButton mode="modal">
-                  <button className="px-4 py-2 text-sm font-medium rounded-md hover:bg-gray-100">
-                    Sign In
-                  </button>
-                </SignInButton>
-                <SignUpButton mode="modal">
-                  <button className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700">
-                    Sign Up
-                  </button>
-                </SignUpButton>
-              </SignedOut>
-              {/* SignedIn = only shows when user IS logged in */}
-              <SignedIn>
-                <UserButton />
-              </SignedIn>
-            </div>
-          </header>
+          {/* Header is a client component to avoid Clerk hydration issues */}
+          <Header />
           {children}
         </body>
       </html>

@@ -1,21 +1,39 @@
 "use client";
 
-import { useState, useEffect } from "react";
+/**
+ * HomePage - Main feed showing all posts
+ *
+ * What it does (simple explanation):
+ * - Shows a form to create new posts
+ * - Shows a list of all posts from the community
+ * - Has a toggle to switch between "Top" (quality sorted) and "Recent" views
+ * - Automatically refreshes after creating a new post
+ *
+ * Technical details:
+ * - Client component (needs useState, useEffect for interactivity)
+ * - Fetches posts from /api/posts with sort param
+ * - Default sort is "quality" (AI-ranked posts first)
+ */
+
+import { useState, useEffect, useCallback } from "react";
 import { PostForm } from "@/components/post/post-form";
 import { PostList } from "@/components/post/post-list";
+import { FeedToggle, SortMode } from "@/components/feed/feed-toggle";
 
 export default function HomePage() {
   const [posts, setPosts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sortMode, setSortMode] = useState<SortMode>("quality"); // Default to quality sort
 
-  // Fetch posts function
-  const fetchPosts = async () => {
+  // Fetch posts function - wrapped in useCallback since it depends on sortMode
+  const fetchPosts = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch("/api/posts");
+      // Pass sort param to API - "quality" or "recent"
+      const response = await fetch(`/api/posts?sort=${sortMode}`);
 
       if (!response.ok) {
         throw new Error("Failed to fetch posts");
@@ -29,22 +47,36 @@ export default function HomePage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [sortMode]);
 
-  // Fetch posts on mount
+  // Fetch posts on mount and when sort mode changes
   useEffect(() => {
     fetchPosts();
-  }, []);
+  }, [fetchPosts]);
 
   // Refresh function for onPostCreated callback
   const refreshPosts = () => {
     fetchPosts();
   };
 
+  // Handle sort mode change
+  const handleSortChange = (mode: SortMode) => {
+    setSortMode(mode);
+    // The useEffect will trigger fetchPosts automatically when sortMode changes
+  };
+
   return (
     <div className="max-w-3xl mx-auto py-8 px-4">
-      <h1 className="text-3xl font-bold mb-6">Feed</h1>
+      {/* Header with title and sort toggle */}
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold">Feed</h1>
+        <FeedToggle value={sortMode} onChange={handleSortChange} />
+      </div>
+
+      {/* Post creation form */}
       <PostForm onPostCreated={refreshPosts} />
+
+      {/* Posts list */}
       <PostList posts={posts} isLoading={isLoading} error={error} />
     </div>
   );

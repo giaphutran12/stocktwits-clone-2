@@ -56,10 +56,15 @@ GEMINI_API_KEY=
   - [x] Added `runtime = "nodejs"` to stock API routes for yahoo-finance2 compatibility
   - [x] Installed `svix` package for webhook verification
 
-### 🔲 Phase 4: LLM Integration (NOT STARTED)
-- [ ] Gemini integration for post analysis
-- [ ] Extract: quality score, insight type, sector, summary
-- [ ] Personalized feed ranking
+### ✅ Phase 4: LLM Integration (COMPLETE)
+- [x] Gemini service wrapper - `lib/gemini.ts`
+- [x] Analysis API endpoint - `app/api/posts/[id]/analyze/route.ts`
+- [x] Async analysis trigger after post creation (fire-and-forget in POST /api/posts)
+- [x] Quality-based feed sorting - `?sort=quality` or `?sort=recent` query param
+- [x] AI analysis UI in post cards - quality stars, insight type badge, sector badge, summary
+- [x] Feed toggle component - `components/feed/feed-toggle.tsx`
+- [x] Main feed with Top/Recent toggle - `app/page.tsx`
+- [x] Schema already had LLM fields (no migration needed): qualityScore, insightType, sector, summary
 
 ### 🔲 Phase 5: Polish (NOT STARTED)
 - [ ] Likes/comments functionality
@@ -88,10 +93,15 @@ GEMINI_API_KEY=
 ### Posts
 - `lib/parse-tickers.ts` - Utility functions (parseTickers, highlightTickers, isValidTicker)
 - `components/post/post-form.tsx` - Post creation form with sentiment + ticker detection
-- `components/post/post-card.tsx` - Post display component
+- `components/post/post-card.tsx` - Post display component (with AI analysis section)
 - `components/post/post-list.tsx` - Post list wrapper with loading/error states
-- `app/api/posts/route.ts` - POST (create) and GET (fetch) posts endpoints
+- `app/api/posts/route.ts` - POST (create with async AI analysis) and GET (fetch with sort) endpoints
+- `app/api/posts/[id]/analyze/route.ts` - POST endpoint to analyze a post with Gemini
 - `app/api/webhooks/clerk/route.ts` - Clerk webhook handler for user sync
+
+### LLM Integration
+- `lib/gemini.ts` - Gemini service wrapper (analyzePost function with structured JSON output)
+- `components/feed/feed-toggle.tsx` - Toggle between "Top" (quality sorted) and "Recent" posts
 
 ### Components
 - `components/stock/stock-chart.tsx` - Interactive price chart
