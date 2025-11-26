@@ -13,7 +13,8 @@
 - **Database:** Neon (PostgreSQL) + Prisma ORM
 - **Stock Data:** `yahoo-finance2` v3.x (npm package) - **NOTE: requires `new YahooFinance()` instantiation**
 - **Charts:** recharts
-- **LLM:** Gemini Flash (`models/gemini-flash-latest`) via `@google/generative-ai`
+- **LLM:** Anthropic Claude (`claude-sonnet-4-20250514`) via `@anthropic-ai/sdk`
+- **Background Jobs:** Inngest (reliable serverless job queue)
 - **Deployment:** Vercel
 
 ## Required ENV Variables
@@ -21,7 +22,8 @@
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
 CLERK_SECRET_KEY=
 DATABASE_URL=
-GEMINI_API_KEY=
+ANTHROPIC_API_KEY=
+INNGEST_SIGNING_KEY=  # Required for production (get from Inngest dashboard)
 ```
 
 ---
@@ -57,14 +59,12 @@ GEMINI_API_KEY=
   - [x] Installed `svix` package for webhook verification
 
 ### ✅ Phase 4: LLM Integration (COMPLETE)
-- [x] Gemini service wrapper - `lib/gemini.ts`
-- [x] Analysis API endpoint - `app/api/posts/[id]/analyze/route.ts`
-- [x] Async analysis trigger after post creation (fire-and-forget in POST /api/posts)
-- [x] Quality-based feed sorting - `?sort=quality` or `?sort=recent` query param
-- [x] AI analysis UI in post cards - quality stars, insight type badge, sector badge, summary
-- [x] Feed toggle component - `components/feed/feed-toggle.tsx`
-- [x] Main feed with Top/Recent toggle - `app/page.tsx`
-- [x] Schema already had LLM fields (no migration needed): qualityScore, insightType, sector, summary
+- [x] Gemini integration for post analysis - `lib/gemini.ts`
+- [x] Extract: quality score, insight type, sector, summary
+- [x] Inngest background job queue - `lib/inngest.ts`, `lib/inngest/functions.ts`
+- [x] API route for Inngest - `app/api/inngest/route.ts`
+- [x] Quality-based feed sorting with Top/Recent toggle
+- [x] AI analysis UI in post cards (stars, badges, summary)
 
 ### 🔲 Phase 5: Polish (NOT STARTED)
 - [ ] Likes/comments functionality
@@ -95,12 +95,15 @@ GEMINI_API_KEY=
 - `components/post/post-form.tsx` - Post creation form with sentiment + ticker detection
 - `components/post/post-card.tsx` - Post display component (with AI analysis section)
 - `components/post/post-list.tsx` - Post list wrapper with loading/error states
-- `app/api/posts/route.ts` - POST (create with async AI analysis) and GET (fetch with sort) endpoints
+- `app/api/posts/route.ts` - POST (create with Inngest event) and GET (fetch with sort) endpoints
 - `app/api/posts/[id]/analyze/route.ts` - POST endpoint to analyze a post with Gemini
 - `app/api/webhooks/clerk/route.ts` - Clerk webhook handler for user sync
 
-### LLM Integration
-- `lib/gemini.ts` - Gemini service wrapper (analyzePost function with structured JSON output)
+### LLM & Background Jobs
+- `lib/anthropic.ts` - Anthropic Claude service (analyzePost with system prompt)
+- `lib/inngest.ts` - Inngest client configuration
+- `lib/inngest/functions.ts` - Background job functions (analyze-post)
+- `app/api/inngest/route.ts` - Inngest webhook handler (GET, POST, PUT)
 - `components/feed/feed-toggle.tsx` - Toggle between "Top" (quality sorted) and "Recent" posts
 
 ### Components
@@ -119,6 +122,7 @@ GEMINI_API_KEY=
 - Clerk Next.js quickstart
 - StockTwits API (RapidAPI)
 - Gemini API docs
+- Inngest docs (ID: 0fe20a57-1de1-4c14-8153-0e5c2ecb1660)
 
 ---
 
@@ -154,6 +158,61 @@ The user&apos;s main goal is to **learn and grow as a developer**. Every interac
 - `mcp__nia__nia_web_search` / `mcp__nia__nia_deep_research_agent` → for web research
 - `mcp__nia__index` → to index new repos/docs for future searches
 - Only fall back to standard tools (Grep, Glob, WebSearch) if Nia fails or is not suitable
+Package Search (No indexing!)
+nia_package_search_grep - Regex-based code search in 3,000+ packages
+nia_package_search_hybrid - AI-powered semantic package search
+nia_package_search_read_file - Read specific file sections
+Supports: PyPI, NPM, Crates.io, Go modules
+Universal Indexing
+index - Universal indexing tool (auto-detects repos or docs from URL)
+get_github_file_tree - Get GitHub file structure without indexing
+Repository Search
+search_codebase - AI-powered natural language code search
+regex_search - Regex pattern search over indexed repositories
+Documentation Search
+search_documentation - Search indexed docs with natural language
+Resource Management
+manage_resource - Unified tool for all resource operations (list, status, rename, delete)
+Web Search & Research
+nia_web_search - AI-powered search for repos, docs, and content
+nia_deep_research_agent - Deep multi-step research and analysis
+Context Management
+context - Unified context management (save, list, retrieve, search, update, delete)
+Development Tools
+read_source_content - Read full content of specific sources
+nia_bug_report - Submit feedback directly to the development team
+Action: save
+Save conversation with title, summary, content, tags, and edited files
+Action: list
+List saved contexts with filtering (workspace, directory, file overlap)
+Action: retrieve
+Pull full context by ID
+Action: search
+Search by keyword across title, summary, content, and tags
+Action: update
+Update title, summary, content, tags, or metadata
+Action: delete
+Remove contexts when done
+Tips & Tricks
+Tips on how to use Nia and some tricks
+ When using Nia search
+Ask your agent to use Nia as many times as you want and also leverage the read_source_content tool because each search tool outputs links where it found information from. Then the read_source_content tool can pick up those links and check the whole webpage or GitHub file to get the entire content if needed.
+​
+2. Use package search when you need information about any package
+Enable your AI agents to search the source code of your package dependencies.
+Grep Search
+Execute grep across the source code of a public package
+Hybrid Search
+Search package source using regex or semantic understanding
+File Reading
+Read exact lines from a source file
+Example queries:
+In numpy, what environment variables or compile-time flags switch kernels, and how do you plug in a custom inner loop?
+How do I stream responses with AI SDK? Use package search.
+Search PostHog and tell me how do they handle analytics and usage monitoring.
+​
+3. When you start a new chat with an agent
+Ask it to list docs/repos first so it can output everything you have indexed, otherwise it won’t have enough context about what it has.
 
 ---
 
