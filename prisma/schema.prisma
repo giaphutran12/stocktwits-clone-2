@@ -118,3 +118,12 @@ model Comment {
 
   @@index([postId])
 }
+
+// TrendingCache - Cached trending tickers data (refreshed by cron)
+// This is a singleton table (only one row) to store trending ticker data
+// so we don't have to recalculate it on every request
+model TrendingCache {
+  id        String   @id @default("singleton")
+  data      Json     // Array of { symbol: string, count: number }
+  updatedAt DateTime @updatedAt
+}

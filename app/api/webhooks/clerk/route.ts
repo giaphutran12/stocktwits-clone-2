@@ -21,6 +21,49 @@ import { WebhookEvent } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
 
+/**
+ * Generates a readable username from email address
+ *
+ * How it works:
+ * - Takes the part before @ in email
+ * - Removes special characters (keeps only letters and numbers)
+ * - Converts to lowercase
+ *
+ * Examples:
+ * - "johndoe@gmail.com" → "johndoe"
+ * - "edward.tran@company.com" → "edwardtran"
+ * - "user123@test.com" → "user123"
+ */
+function generateUsernameFromEmail(email: string): string {
+  return email.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Ensures username is unique by adding random numbers if needed
+ *
+ * How it works:
+ * - Checks if username exists in database
+ * - If it does, adds random 4-digit number
+ * - Keeps trying until unique (max 10 attempts)
+ */
+async function ensureUniqueUsername(baseUsername: string): Promise<string> {
+  let username = baseUsername;
+  let attempts = 0;
+
+  while (attempts < 10) {
+    const existing = await db.user.findUnique({ where: { username } });
+    if (!existing) {
+      return username; // Username is available!
+    }
+    // Add random 4-digit number
+    username = `${baseUsername}${Math.floor(1000 + Math.random() * 9000)}`;
+    attempts++;
+  }
+
+  // Fallback: use timestamp if still not unique (very rare)
+  return `${baseUsername}${Date.now()}`;
+}
+
 export async function POST(req: Request) {
   // Step 1: Get the webhook secret from environment variables
   // You set this up in Clerk Dashboard > Webhooks > your webhook > Signing Secret
@@ -100,13 +143,22 @@ export async function POST(req: Request) {
         // Build the full name from first and last name
         const fullName = [first_name, last_name].filter(Boolean).join(" ") || null;
 
+        // Generate readable username from email if Clerk doesn't provide one
+        // This makes profiles look nicer: /profile/johndoe instead of /profile/user_2abc123
+        let finalUsername = username;
+        if (!finalUsername && eventType === "user.created") {
+          const baseUsername = generateUsernameFromEmail(primaryEmail.email_address);
+          finalUsername = await ensureUniqueUsername(baseUsername);
+        }
+
         // Upsert = "Update if exists, Insert if not"
         // This handles both user.created and user.updated events
         await db.user.upsert({
           where: { id },
           update: {
             email: primaryEmail.email_address,
-            username: username || null,
+            // Only update username if Clerk provides one (don't overwrite generated username with null)
+            ...(username && { username }),
             name: fullName,
             imageUrl: image_url || null,
             // Note: We don't update bio or reputation here - those are managed by our app
@@ -114,7 +166,7 @@ export async function POST(req: Request) {
           create: {
             id,
             email: primaryEmail.email_address,
-            username: username || null,
+            username: finalUsername || null,
             name: fullName,
             imageUrl: image_url || null,
             // bio and reputation use default values from schema

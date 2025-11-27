@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Header } from "@/components/layout/header";
+import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -38,6 +39,8 @@ export default function RootLayout({
           {/* Header is a client component to avoid Clerk hydration issues */}
           <Header />
           {children}
+          {/* Toast notifications - bottom right by default */}
+          <Toaster position="bottom-right" />
         </body>
       </html>
     </ClerkProvider>

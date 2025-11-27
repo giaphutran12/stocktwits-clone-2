@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 
 // Post type matching Prisma schema + API response
-// Includes AI analysis fields from Gemini
+// Includes AI analysis fields from Claude
 type Post = {
   id: string;
   content: string;
@@ -22,11 +22,13 @@ type Post = {
     likes: number;
     comments: number;
   };
-  // AI Analysis fields (populated async by Gemini)
+  // AI Analysis fields (populated async by Claude)
   qualityScore: number | null;
   insightType: string | null;
   sector: string | null;
   summary: string | null;
+  // Like status for current user
+  hasLiked: boolean;
 };
 
 interface PostListProps {

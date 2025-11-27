@@ -7,18 +7,21 @@
  * - Shows a form to create new posts
  * - Shows a list of all posts from the community
  * - Has a toggle to switch between "Top" (quality sorted) and "Recent" views
+ * - Shows trending tickers sidebar on desktop
  * - Automatically refreshes after creating a new post
  *
  * Technical details:
  * - Client component (needs useState, useEffect for interactivity)
  * - Fetches posts from /api/posts with sort param
  * - Default sort is "quality" (AI-ranked posts first)
+ * - 2-column layout on desktop (feed + sidebar)
  */
 
 import { useState, useEffect, useCallback } from "react";
 import { PostForm } from "@/components/post/post-form";
 import { PostList } from "@/components/post/post-list";
 import { FeedToggle, SortMode } from "@/components/feed/feed-toggle";
+import { TrendingSidebar } from "@/components/sidebar/trending-sidebar";
 
 export default function HomePage() {
   const [posts, setPosts] = useState([]);
@@ -66,18 +69,29 @@ export default function HomePage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto py-8 px-4">
-      {/* Header with title and sort toggle */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold">Feed</h1>
-        <FeedToggle value={sortMode} onChange={handleSortChange} />
+    <div className="max-w-6xl mx-auto py-8 px-4">
+      {/* 2-column layout: Feed (main) + Trending (sidebar on desktop) */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
+        {/* Main Feed Column */}
+        <div>
+          {/* Header with title and sort toggle */}
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-3xl font-bold">Feed</h1>
+            <FeedToggle value={sortMode} onChange={handleSortChange} />
+          </div>
+
+          {/* Post creation form */}
+          <PostForm onPostCreated={refreshPosts} />
+
+          {/* Posts list */}
+          <PostList posts={posts} isLoading={isLoading} error={error} />
+        </div>
+
+        {/* Sidebar Column - hidden on mobile, visible on desktop (lg+) */}
+        <aside className="hidden lg:block">
+          <TrendingSidebar />
+        </aside>
       </div>
-
-      {/* Post creation form */}
-      <PostForm onPostCreated={refreshPosts} />
-
-      {/* Posts list */}
-      <PostList posts={posts} isLoading={isLoading} error={error} />
     </div>
   );
 }
