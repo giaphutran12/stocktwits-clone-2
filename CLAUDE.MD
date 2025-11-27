@@ -1,11 +1,12 @@
 # Agent Instructions
 
 ## Project Overview
-**StockTwits Clone** - A Twitter-like social platform for stock traders where users can:
+**Stolk** (Stocks + Stalking) - A Twitter-like social platform for stock traders where users can:
 - Post about stocks using $TICKER format (e.g., $AAPL)
 - Choose sentiment (Bullish/Bearish/Neutral) for each post
+- Search for stocks by name or ticker via autocomplete search
 - View stock charts and community posts on stock pages
-- Get LLM-powered insights and post analysis (future)
+- Get AI-powered insights and post analysis via Claude
 
 ## Tech Stack
 - **Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS 4, shadcn/ui
@@ -59,18 +60,19 @@ INNGEST_SIGNING_KEY=  # Required for production (get from Inngest dashboard)
   - [x] Installed `svix` package for webhook verification
 
 ### ✅ Phase 4: LLM Integration (COMPLETE)
-- [x] Gemini integration for post analysis - `lib/gemini.ts`
+- [x] Anthropic Claude integration for post analysis - `lib/anthropic.ts`
 - [x] Extract: quality score, insight type, sector, summary
 - [x] Inngest background job queue - `lib/inngest.ts`, `lib/inngest/functions.ts`
 - [x] API route for Inngest - `app/api/inngest/route.ts`
-- [x] Quality-based feed sorting with Top/Recent toggle
+- [x] Quality-based feed sorting with Top/Recent toggle (nulls last fix applied)
 - [x] AI analysis UI in post cards (stars, badges, summary)
 
-### 🔲 Phase 5: Polish (NOT STARTED)
+### 🔄 Phase 5: Polish (IN PROGRESS)
+- [x] **Navbar with "Stolk" branding** - `components/layout/header.tsx`
+- [x] **Stock search with autocomplete** - `components/search/stock-search.tsx`, `app/api/stocks/search/route.ts`
 - [ ] Likes/comments functionality
 - [ ] User profiles
 - [ ] Trending tickers sidebar
-- [ ] Search functionality
 
 ---
 
@@ -105,6 +107,11 @@ INNGEST_SIGNING_KEY=  # Required for production (get from Inngest dashboard)
 - `lib/inngest/functions.ts` - Background job functions (analyze-post)
 - `app/api/inngest/route.ts` - Inngest webhook handler (GET, POST, PUT)
 - `components/feed/feed-toggle.tsx` - Toggle between "Top" (quality sorted) and "Recent" posts
+
+### Navigation & Search
+- `components/layout/header.tsx` - Navbar with Stolk branding, search, and auth buttons
+- `components/search/stock-search.tsx` - Autocomplete stock search (desktop popover + mobile dialog)
+- `app/api/stocks/search/route.ts` - Stock search API endpoint (calls searchStocks from yahoo-finance.ts)
 
 ### Components
 - `components/stock/stock-chart.tsx` - Interactive price chart
