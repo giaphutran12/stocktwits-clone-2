@@ -188,6 +188,36 @@ context - Unified context management (save, list, retrieve, search, update, dele
 Development Tools
 read_source_content - Read full content of specific sources
 nia_bug_report - Submit feedback directly to the development team
+
+### Context Save Format (IMPORTANT - Get This Right!)
+When saving context with `mcp__nia__context`, the `edited_files` parameter must use this EXACT format:
+```json
+[
+  {
+    "file_path": "path/to/file.ts",
+    "operation": "created",
+    "changes_description": "Brief description"
+  },
+  {
+    "file_path": "another/file.tsx",
+    "operation": "modified",
+    "changes_description": "What was changed"
+  }
+]
+```
+**Required fields:** `file_path`, `operation`, `changes_description`
+**Valid operations:** `"created"`, `"modified"`, `"deleted"`
+
+❌ WRONG (common mistake):
+```json
+[{"path": "file.ts", "action": "created"}]
+```
+
+✅ CORRECT:
+```json
+[{"file_path": "file.ts", "operation": "created", "changes_description": "Added search API"}]
+```
+
 Action: save
 Save conversation with title, summary, content, tags, and edited files
 Action: list
