@@ -10,6 +10,7 @@ import { auth, clerkClient } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 import { parseTickers } from '@/lib/parse-tickers';
 import { Sentiment } from '@/lib/generated/prisma';
+import { inngest } from '@/lib/inngest';
 
 /**
  * POST /api/posts - Create a new post
@@ -138,10 +139,17 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Step 5: Trigger async AI analysis (fire-and-forget)
-    // This calls the analyze endpoint without waiting for it to complete
-    // The post is returned immediately, and AI fields populate in the background
-    triggerAsyncAnalysis(post.id, req);
+    // Step 5: Queue AI analysis via Inngest
+    // Instead of fire-and-forget fetch (which dies on serverless), we send an event
+    // to Inngest which processes it reliably in the background with retries
+    await inngest.send({
+      name: "post/created",
+      data: {
+        postId: post.id,
+        content,
+        tickers,
+      },
+    });
 
     // Step 6: Return the created post
     return NextResponse.json(post, { status: 201 });
@@ -152,45 +160,6 @@ export async function POST(req: NextRequest) {
       { error: 'Internal server error - Failed to create post' },
       { status: 500 }
     );
-  }
-}
-
-/**
- * Triggers async AI analysis for a post
- *
- * Why fire-and-forget:
- * - Post creation stays fast (~100ms)
- * - AI analysis can take 1-3 seconds
- * - User sees their post immediately
- * - Analysis results populate when ready
- *
- * How it works:
- * - Makes a POST request to /api/posts/[id]/analyze
- * - Doesn't await the response (fire-and-forget)
- * - Errors are logged but don't affect the user
- */
-function triggerAsyncAnalysis(postId: string, req: NextRequest) {
-  try {
-    // Build the analyze endpoint URL using the request's origin
-    const origin = req.nextUrl.origin;
-    const analyzeUrl = `${origin}/api/posts/${postId}/analyze`;
-
-    // Fire-and-forget: call the endpoint but don't wait for response
-    // We use .catch() to handle any network errors silently
-    fetch(analyzeUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    }).catch((error) => {
-      // Log the error but don't throw - this is background work
-      console.error('[AsyncAnalysis] Failed to trigger analysis:', error);
-    });
-
-    console.log(`[AsyncAnalysis] Triggered for post ${postId}`);
-  } catch (error) {
-    // If something goes wrong building the URL, just log it
-    console.error('[AsyncAnalysis] Error:', error);
   }
 }
 
@@ -266,13 +235,17 @@ export async function GET(req: NextRequest) {
     // Step 3: Build sort order based on 'sort' param
     // - "quality": High quality first, then newest (posts without scores go last)
     // - "recent": Newest first (traditional chronological order)
+    //
+    // IMPORTANT: Prisma's default for 'desc' puts nulls FIRST, not last!
+    // We must explicitly set nulls: 'last' to push unanalyzed posts to the bottom.
     const orderBy =
       sort === 'recent'
         ? [{ createdAt: 'desc' as const }]
         : [
-            // Sort by quality score descending (nulls last via Prisma default)
-            { qualityScore: 'desc' as const },
-            // Then by creation date for posts with same score
+            // Sort by quality score descending with nulls LAST
+            // This ensures posts with AI analysis appear before unanalyzed posts
+            { qualityScore: { sort: 'desc' as const, nulls: 'last' as const } },
+            // Then by creation date for posts with same score (or both null)
             { createdAt: 'desc' as const },
           ];
 
