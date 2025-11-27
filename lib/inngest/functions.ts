@@ -66,5 +66,74 @@ export const analyzePostFunction = inngest.createFunction(
   }
 );
 
+/**
+ * Refresh Trending Function
+ *
+ * Triggered when: Every 5 minutes (cron schedule)
+ *
+ * What it does:
+ * 1. Calculates trending tickers from the last 24 hours
+ * 2. Updates the TrendingCache table with fresh data
+ *
+ * Why a cron job?
+ * Instead of calculating trending data on every API request (expensive!),
+ * we pre-calculate it periodically and store it in the cache. This makes
+ * the /api/trending endpoint super fast!
+ *
+ * Cron syntax: Runs every 5 minutes
+ */
+export const refreshTrendingFunction = inngest.createFunction(
+  {
+    id: "refresh-trending",
+  },
+  { cron: "*/5 * * * *" }, // Every 5 minutes
+  async ({ logger }) => {
+    logger.info("Starting trending ticker refresh");
+
+    // Calculate the cutoff time (24 hours ago)
+    const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    // Query: Group tickers by symbol, count occurrences, filter by date
+    const trending = await db.postTicker.groupBy({
+      by: ['symbol'],
+      _count: { symbol: true },
+      where: {
+        post: { createdAt: { gte: last24h } },
+      },
+      orderBy: { _count: { symbol: 'desc' } },
+      take: 10,
+    });
+
+    // Transform the result to match our expected format
+    const trendingData = trending.map((item) => ({
+      symbol: item.symbol,
+      count: item._count.symbol,
+    }));
+
+    logger.info(`Calculated trending tickers: ${trendingData.length} tickers`, {
+      tickers: trendingData.map(t => t.symbol),
+    });
+
+    // Update cache (upsert = update if exists, create if doesn't)
+    await db.trendingCache.upsert({
+      where: { id: 'singleton' },
+      update: {
+        data: trendingData,
+      },
+      create: {
+        id: 'singleton',
+        data: trendingData,
+      },
+    });
+
+    logger.info("Trending cache updated successfully");
+
+    return {
+      success: true,
+      trendingCount: trendingData.length,
+    };
+  }
+);
+
 // Export all functions as an array for the serve() handler
-export const functions = [analyzePostFunction];
+export const functions = [analyzePostFunction, refreshTrendingFunction];

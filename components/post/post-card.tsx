@@ -1,10 +1,15 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Heart, MessageCircle, Sparkles, Star } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Heart, Sparkles, Star, Loader2 } from "lucide-react";
+import { CommentSection } from "./comment-section";
+import { toast } from "sonner";
 
 // Post type matching Prisma schema + API response
 // Now includes AI analysis fields from Gemini
@@ -24,11 +29,13 @@ type Post = {
     likes: number;
     comments: number;
   };
-  // AI Analysis fields (populated async by Gemini)
+  // AI Analysis fields (populated async by Claude)
   qualityScore: number | null;
   insightType: string | null;
   sector: string | null;
   summary: string | null;
+  // Like status for current user
+  hasLiked: boolean;
 };
 
 interface PostCardProps {
@@ -214,7 +221,14 @@ function getInsightTypeConfig(type: string | null) {
 }
 
 export function PostCard({ post }: PostCardProps) {
-  const { author, content, sentiment, createdAt, _count, qualityScore, insightType, sector, summary } = post;
+  const { author, content, sentiment, createdAt, _count, qualityScore, insightType, sector, summary, hasLiked } = post;
+  const { isSignedIn } = useUser();
+
+  // Optimistic UI state for likes
+  const [isLiked, setIsLiked] = useState(hasLiked);
+  const [likeCount, setLikeCount] = useState(_count.likes);
+  const [isLiking, setIsLiking] = useState(false);
+
   const sentimentConfig = getSentimentConfig(sentiment);
   const displayName = author.name || author.username || "Anonymous";
   const displayUsername = author.username ? `@${author.username}` : "";
@@ -223,27 +237,99 @@ export function PostCard({ post }: PostCardProps) {
   // Check if we have any AI analysis data to display
   const hasAIAnalysis = qualityScore !== null || insightType || sector || summary;
 
+  /**
+   * Handle like button click with optimistic UI
+   * Updates the UI immediately, then syncs with server
+   * Rolls back on error
+   */
+  const handleLike = async () => {
+    // Check if user is signed in
+    if (!isSignedIn) {
+      toast.info("Sign in to like posts");
+      return;
+    }
+
+    // Prevent double-clicks while request is in flight
+    if (isLiking) return;
+
+    // Optimistic update - change UI immediately
+    const previousLiked = isLiked;
+    const previousCount = likeCount;
+    setIsLiked(!isLiked);
+    setLikeCount(isLiked ? likeCount - 1 : likeCount + 1);
+    setIsLiking(true);
+
+    try {
+      const response = await fetch(`/api/posts/${post.id}/like`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to toggle like");
+      }
+
+      // Sync with server response (in case of race conditions)
+      const data = await response.json();
+      setIsLiked(data.liked);
+      setLikeCount(data.likeCount);
+    } catch (error) {
+      // Rollback on error
+      setIsLiked(previousLiked);
+      setLikeCount(previousCount);
+      toast.error("Failed to like post. Please try again.");
+      console.error("Like error:", error);
+    } finally {
+      setIsLiking(false);
+    }
+  };
+
   return (
     <Card className="py-4">
       <CardContent className="space-y-3">
         {/* Author Header */}
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <Avatar className="size-10">
-              {author.imageUrl && (
-                <AvatarImage src={author.imageUrl} alt={displayName} />
-              )}
-              <AvatarFallback>
-                {getInitials(author.name, author.username)}
-              </AvatarFallback>
-            </Avatar>
+            {/* Avatar - clickable if user has username */}
+            {author.username ? (
+              <Link href={`/profile/${author.username}`}>
+                <Avatar className="size-10 cursor-pointer hover:opacity-80 transition-opacity">
+                  {author.imageUrl && (
+                    <AvatarImage src={author.imageUrl} alt={displayName} />
+                  )}
+                  <AvatarFallback>
+                    {getInitials(author.name, author.username)}
+                  </AvatarFallback>
+                </Avatar>
+              </Link>
+            ) : (
+              <Avatar className="size-10">
+                {author.imageUrl && (
+                  <AvatarImage src={author.imageUrl} alt={displayName} />
+                )}
+                <AvatarFallback>
+                  {getInitials(author.name, author.username)}
+                </AvatarFallback>
+              </Avatar>
+            )}
             <div className="flex flex-col">
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-sm">{displayName}</span>
+                {author.username ? (
+                  <Link
+                    href={`/profile/${author.username}`}
+                    className="font-semibold text-sm hover:underline"
+                  >
+                    {displayName}
+                  </Link>
+                ) : (
+                  <span className="font-semibold text-sm">{displayName}</span>
+                )}
                 {displayUsername && (
-                  <span className="text-muted-foreground text-sm">
+                  <Link
+                    href={`/profile/${author.username}`}
+                    className="text-muted-foreground text-sm hover:underline"
+                  >
                     {displayUsername}
-                  </span>
+                  </Link>
                 )}
               </div>
               <span className="text-muted-foreground text-xs">
@@ -297,17 +383,34 @@ export function PostCard({ post }: PostCardProps) {
           </div>
         )}
 
-        {/* Footer: Likes and Comments */}
-        <div className="flex items-center gap-4 pt-2 text-muted-foreground">
-          <div className="flex items-center gap-1.5 text-sm">
-            <Heart className="size-4" />
-            <span>{_count.likes}</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-sm">
-            <MessageCircle className="size-4" />
-            <span>{_count.comments}</span>
-          </div>
+        {/* Footer: Like Button */}
+        <div className="flex items-center gap-4 pt-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLike}
+            disabled={isLiking}
+            className={`flex items-center gap-1.5 px-2 h-8 transition-all duration-200 ${
+              isLiked
+                ? "text-red-500 hover:text-red-600"
+                : "text-muted-foreground hover:text-red-400"
+            }`}
+          >
+            {isLiking ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Heart
+                className={`size-4 transition-transform duration-200 ${
+                  isLiked ? "fill-red-500 scale-110" : "fill-none"
+                }`}
+              />
+            )}
+            <span className="text-sm">{likeCount}</span>
+          </Button>
         </div>
+
+        {/* Comment Section - Expandable */}
+        <CommentSection postId={post.id} commentCount={_count.comments} />
       </CardContent>
     </Card>
   );

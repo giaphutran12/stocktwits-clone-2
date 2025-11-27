@@ -13,6 +13,30 @@ import { Sentiment } from '@/lib/generated/prisma';
 import { inngest } from '@/lib/inngest';
 
 /**
+ * Generates a readable username from email address
+ * Takes the part before @ and removes special characters
+ */
+function generateUsernameFromEmail(email: string): string {
+  return email.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Ensures username is unique by adding random numbers if needed
+ */
+async function ensureUniqueUsername(baseUsername: string): Promise<string> {
+  let username = baseUsername;
+  let attempts = 0;
+
+  while (attempts < 10) {
+    const existing = await db.user.findUnique({ where: { username } });
+    if (!existing) return username;
+    username = `${baseUsername}${Math.floor(1000 + Math.random() * 9000)}`;
+    attempts++;
+  }
+  return `${baseUsername}${Date.now()}`;
+}
+
+/**
  * POST /api/posts - Create a new post
  *
  * How it works:
@@ -47,14 +71,22 @@ export async function POST(req: NextRequest) {
     // We use upsert() which means: "update if exists, create if doesn't"
     const client = await clerkClient();
     const clerkUser = await client.users.getUser(userId);
+    const email = clerkUser.emailAddresses[0]?.emailAddress || '';
+
+    // Generate readable username from email if Clerk doesn't provide one
+    let username = clerkUser.username;
+    if (!username && email) {
+      const baseUsername = generateUsernameFromEmail(email);
+      username = await ensureUniqueUsername(baseUsername);
+    }
 
     await db.user.upsert({
       where: { id: userId },
       update: {}, // Don't update if they already exist
       create: {
         id: userId,
-        email: clerkUser.emailAddresses[0]?.emailAddress || '',
-        username: clerkUser.username || clerkUser.id,
+        email,
+        username: username || null,
         name: `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || null,
         imageUrl: clerkUser.imageUrl || null,
       },
@@ -188,6 +220,10 @@ export async function POST(req: NextRequest) {
  */
 export async function GET(req: NextRequest) {
   try {
+    // Step 0: Get current user (may be null if not logged in)
+    // We need this to check which posts the user has liked
+    const { userId } = await auth();
+
     // Step 1: Parse query parameters from URL
     const { searchParams } = new URL(req.url);
     const ticker = searchParams.get('ticker');
@@ -280,10 +316,45 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Step 5: Return the posts array wrapped in an object
+    // Step 5: Add hasLiked field if user is logged in
+    // This solves the N+1 problem by doing ONE batch query for all likes
+    // instead of checking each post individually
+    let postsWithLikeStatus = posts;
+
+    if (userId) {
+      // Get all post IDs from the fetched posts
+      const postIds = posts.map((p) => p.id);
+
+      // Single query to get ALL likes by current user for these posts
+      const userLikes = await db.like.findMany({
+        where: {
+          userId,
+          postId: { in: postIds }, // PostgreSQL IN clause - uses index
+        },
+        select: { postId: true }, // Only need postId, not the whole record
+      });
+
+      // Create a Set for O(1) lookup (instead of array.includes which is O(n))
+      const likedPostIds = new Set(userLikes.map((l) => l.postId));
+
+      // Attach hasLiked to each post
+      postsWithLikeStatus = posts.map((post) => ({
+        ...post,
+        hasLiked: likedPostIds.has(post.id),
+      }));
+    } else {
+      // User not logged in - set hasLiked to false for all posts
+      postsWithLikeStatus = posts.map((post) => ({
+        ...post,
+        hasLiked: false,
+      }));
+    }
+
+    // Step 6: Return the posts array wrapped in an object
     // Frontend expects { posts: [...] } format, not raw array
     // Posts now include AI fields: qualityScore, insightType, sector, summary
-    return NextResponse.json({ posts }, { status: 200 });
+    // AND hasLiked boolean for the current user
+    return NextResponse.json({ posts: postsWithLikeStatus }, { status: 200 });
 
   } catch (error) {
     console.error('Error fetching posts:', error);
