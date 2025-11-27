@@ -190,3 +190,223 @@ function getNullAnalysis(): PostAnalysis {
     summary: null,
   };
 }
+
+// ============================================================
+// COMMUNITY SENTIMENT ANALYSIS
+// ============================================================
+
+/**
+ * Type for community sentiment analysis result
+ *
+ * What each field means:
+ * - summary: 2-3 sentence overview of community sentiment
+ * - keyThemes: Top catalysts/topics being discussed (max 3)
+ * - sentimentStrength: How strong/unified the sentiment is
+ * - confidence: How confident we are in the analysis (based on post quality/volume)
+ */
+export type CommunitySentimentAnalysis = {
+  summary: string | null;
+  keyThemes: string[];
+  sentimentStrength: "strong" | "moderate" | "weak" | "mixed" | null;
+  confidence: "high" | "medium" | "low" | null;
+};
+
+// Valid values for validation
+const VALID_SENTIMENT_STRENGTHS = ["strong", "moderate", "weak", "mixed"];
+const VALID_CONFIDENCE_LEVELS = ["high", "medium", "low"];
+
+/**
+ * System prompt for community sentiment analysis
+ *
+ * Key differences from individual post analysis:
+ * - Analyzes MULTIPLE posts together
+ * - Focuses on patterns and themes across the community
+ * - Provides sentiment strength and confidence ratings
+ */
+const COMMUNITY_SYSTEM_PROMPT = `You are a financial analyst summarizing community sentiment for a stock trading platform.
+
+Your task is to analyze a collection of community posts about a specific stock and provide:
+1. A concise 2-3 sentence summary of the overall community sentiment
+2. Key themes or catalysts mentioned (if any)
+3. Sentiment strength rating
+4. Confidence in the analysis
+
+## Guidelines
+- Focus on substance, not emotions ("earnings concerns" not "people are scared")
+- Highlight specific catalysts when mentioned (earnings, FDA approval, rate cuts, etc.)
+- Note if sentiment is unusually one-sided or if there is healthy debate
+- Be concise - traders want quick insights, not essays
+- If posts are mostly low-quality/spam, acknowledge limited quality insights
+
+## Output Format
+Return ONLY valid JSON (no markdown, no explanation):
+{
+  "summary": "<2-3 sentence overview>",
+  "keyThemes": ["<theme1>", "<theme2>"],
+  "sentimentStrength": "<strong|moderate|weak|mixed>",
+  "confidence": "<high|medium|low>"
+}
+
+## Sentiment Strength Guidelines
+- strong: 70%+ posts share the same sentiment with clear reasoning
+- moderate: 50-70% agreement or mixed but trending one direction
+- weak: No clear direction, sparse or low-quality posts
+- mixed: Healthy debate with strong arguments on both sides
+
+## Confidence Guidelines
+- high: 5+ quality posts with specific reasoning
+- medium: 3-5 posts or posts with some substance
+- low: Few posts, mostly emotional/low-quality content`;
+
+/**
+ * Analyzes community sentiment for a stock using Claude AI
+ *
+ * What this does:
+ * 1. Takes a list of quality posts about a stock
+ * 2. Sends them to Claude with sentiment percentages
+ * 3. Claude identifies themes, patterns, and overall community mood
+ * 4. Returns structured analysis for display
+ *
+ * @param symbol - Stock ticker (e.g., "AAPL")
+ * @param period - Time period analyzed (e.g., "24h", "7d")
+ * @param posts - Array of quality posts with content, sentiment, and score
+ * @param breakdown - Percentage breakdown of bullish/bearish/neutral
+ */
+export async function analyzeCommunitySentiment(
+  symbol: string,
+  period: string,
+  posts: Array<{ content: string; sentiment: string; qualityScore: number | null }>,
+  breakdown: { bullish: number; bearish: number; neutral: number }
+): Promise<CommunitySentimentAnalysis> {
+  // Check if API key is configured
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.warn("[Anthropic] No API key configured, skipping community analysis");
+    return getNullCommunityAnalysis();
+  }
+
+  // Need at least 3 posts for meaningful analysis
+  if (posts.length < 3) {
+    console.log("[Anthropic] Not enough posts for community analysis");
+    return getNullCommunityAnalysis();
+  }
+
+  try {
+    console.log(`[Anthropic] Analyzing community sentiment for $${symbol} (${period})`);
+
+    // Format posts for Claude
+    const postsText = posts
+      .map(
+        (p, i) =>
+          `${i + 1}. "${p.content.substring(0, 300)}" (Sentiment: ${p.sentiment}, Quality: ${
+            p.qualityScore?.toFixed(2) || "N/A"
+          })`
+      )
+      .join("\n---\n");
+
+    // Call Claude with community analysis prompt
+    const message = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001", // Same fast model as post analysis
+      max_tokens: 300,
+      system: COMMUNITY_SYSTEM_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content: `Analyze community sentiment for $${symbol}:
+
+Time period: ${period}
+Total quality posts: ${posts.length}
+
+Sentiment breakdown:
+- Bullish: ${breakdown.bullish}%
+- Bearish: ${breakdown.bearish}%
+- Neutral: ${breakdown.neutral}%
+
+Recent quality posts:
+${postsText}`,
+        },
+      ],
+    });
+
+    // Extract and parse response
+    const responseText =
+      message.content[0].type === "text" ? message.content[0].text : "";
+
+    console.log("[Anthropic] Community analysis response:", responseText.substring(0, 200));
+
+    return parseCommunityAnalysisResponse(responseText);
+  } catch (error) {
+    console.error("[Anthropic] Community analysis error:", error);
+    return getNullCommunityAnalysis();
+  }
+}
+
+/**
+ * Parses and validates the JSON response from Claude
+ */
+function parseCommunityAnalysisResponse(text: string): CommunitySentimentAnalysis {
+  try {
+    // Extract JSON from response
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error("[Anthropic] No JSON found in community analysis response");
+      return getNullCommunityAnalysis();
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    return {
+      summary: validateCommunitySummary(parsed.summary),
+      keyThemes: validateKeyThemes(parsed.keyThemes),
+      sentimentStrength: validateSentimentStrength(parsed.sentimentStrength),
+      confidence: validateConfidence(parsed.confidence),
+    };
+  } catch (error) {
+    console.error("[Anthropic] Failed to parse community analysis:", text, error);
+    return getNullCommunityAnalysis();
+  }
+}
+
+function validateCommunitySummary(summary: unknown): string | null {
+  if (typeof summary !== "string") return null;
+  const trimmed = summary.trim();
+  if (trimmed.length === 0) return null;
+  // Truncate if too long
+  return trimmed.length > 300 ? trimmed.substring(0, 297) + "..." : trimmed;
+}
+
+function validateKeyThemes(themes: unknown): string[] {
+  if (!Array.isArray(themes)) return [];
+  return themes
+    .filter((t) => typeof t === "string" && t.trim().length > 0)
+    .slice(0, 3) // Max 3 themes
+    .map((t) => (t as string).trim());
+}
+
+function validateSentimentStrength(
+  strength: unknown
+): CommunitySentimentAnalysis["sentimentStrength"] {
+  if (typeof strength !== "string") return null;
+  const normalized = strength.toLowerCase().trim();
+  return VALID_SENTIMENT_STRENGTHS.includes(normalized)
+    ? (normalized as CommunitySentimentAnalysis["sentimentStrength"])
+    : null;
+}
+
+function validateConfidence(
+  confidence: unknown
+): CommunitySentimentAnalysis["confidence"] {
+  if (typeof confidence !== "string") return null;
+  const normalized = confidence.toLowerCase().trim();
+  return VALID_CONFIDENCE_LEVELS.includes(normalized)
+    ? (normalized as CommunitySentimentAnalysis["confidence"])
+    : null;
+}
+
+function getNullCommunityAnalysis(): CommunitySentimentAnalysis {
+  return {
+    summary: null,
+    keyThemes: [],
+    sentimentStrength: null,
+    confidence: null,
+  };
+}

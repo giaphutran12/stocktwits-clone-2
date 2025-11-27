@@ -10,6 +10,7 @@
 import { StockChart } from "@/components/stock/stock-chart";
 import { StockStats } from "@/components/stock/stock-stats";
 import { StockPostsSection } from "@/components/stock/stock-posts-section";
+import { CommunitySentiment } from "@/components/stock/community-sentiment";
 
 export default async function StockPage({
   params,
@@ -25,6 +26,11 @@ export default async function StockPage({
       {/* Stock stats section */}
       <section className="mb-8">
         <StockStats symbol={upperSymbol} />
+      </section>
+
+      {/* Community sentiment analysis section */}
+      <section className="mb-8">
+        <CommunitySentiment symbol={upperSymbol} />
       </section>
 
       {/* Chart section */}
