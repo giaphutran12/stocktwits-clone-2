@@ -15,8 +15,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "StockTwits Clone",
+  title: "Stolk",
   description: "A social platform for stock traders",
+  icons: {
+    icon: "/phosphor-icons/SVGs/light/chart-line-up-light.svg",
+  },
 };
 
 export default function RootLayout({
