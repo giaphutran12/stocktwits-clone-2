@@ -14,6 +14,8 @@
 import { inngest } from "../inngest";
 import { db } from "../db";
 import { analyzePost } from "../anthropic"; // Switched from Gemini to Anthropic
+import { getCompanyNews } from "@/lib/finnhub";
+import { analyzeNewsSentiment } from "@/lib/anthropic";
 
 /**
  * Analyze Post Function
@@ -135,5 +137,198 @@ export const refreshTrendingFunction = inngest.createFunction(
   }
 );
 
+// ============================================
+// NEWS SENTIMENT JOBS
+// ============================================
+
+/**
+ * Refreshes news sentiment for all stocks with community activity.
+ *
+ * Runs every 30 minutes via cron.
+ *
+ * For each active stock:
+ * 1. Fetch news from Finnhub API (company-news endpoint - FREE tier)
+ * 2. Send headlines to Claude to classify and calculate sentiment percentages
+ * 3. Generate AI summary with key themes
+ * 4. Cache results in NewsSentimentCache table
+ * 5. Store articles in NewsArticle table
+ *
+ * Note: We use Claude for sentiment percentages because Finnhub's
+ * /news-sentiment endpoint requires a paid subscription (~$50/month).
+ */
+export const refreshNewsSentimentFunction = inngest.createFunction(
+  {
+    id: "refresh-news-sentiment",
+    retries: 2,
+  },
+  { cron: "*/30 * * * *" }, // Every 30 minutes
+  async ({ logger }) => {
+    logger.info("Starting news sentiment refresh job");
+
+    // 1. Get all stocks that have community posts (active stocks)
+    const activeSymbols = await db.postTicker.findMany({
+      select: { symbol: true },
+      distinct: ["symbol"],
+    });
+
+    logger.info(`Found ${activeSymbols.length} active stocks to process`);
+
+    const results: Array<{
+      symbol: string;
+      success: boolean;
+      error?: string;
+      articleCount?: number;
+    }> = [];
+
+    // 2. Process each symbol
+    for (const { symbol } of activeSymbols) {
+      try {
+        logger.info(`Processing ${symbol}...`);
+
+        // Fetch company news from Finnhub (FREE tier)
+        // Note: getNewsSentiment() requires PAID tier, so we use Claude to calculate percentages
+        const articles = await getCompanyNews(symbol, 7); // Last 7 days
+
+        // Skip if not enough articles for meaningful analysis
+        if (articles.length < 3) {
+          logger.info(`Not enough articles for ${symbol} (${articles.length}), skipping`);
+          results.push({ symbol, success: false, error: "Not enough articles" });
+          continue;
+        }
+
+        // Prepare articles for AI analysis
+        const articleData = articles.slice(0, 10).map((a: { headline: string; summary?: string; source: string }) => ({
+          headline: a.headline,
+          summary: a.summary || null,
+          source: a.source,
+        }));
+
+        // Get AI analysis from Claude (includes percentages calculation)
+        const aiAnalysis = await analyzeNewsSentiment(symbol, articleData);
+
+        // Calculate companyNewsScore from percentages: (bullish - bearish) / 100 gives -1 to 1 range
+        const companyNewsScore =
+          (aiAnalysis.bullishPercent - aiAnalysis.bearishPercent) / 100;
+
+        // Upsert sentiment cache with Claude's percentages
+        await db.newsSentimentCache.upsert({
+          where: { symbol },
+          create: {
+            symbol,
+            bullishPercent: aiAnalysis.bullishPercent,
+            bearishPercent: aiAnalysis.bearishPercent,
+            neutralPercent: aiAnalysis.neutralPercent,
+            companyNewsScore,
+            articleCount: articles.length,
+            summary: aiAnalysis.summary,
+            keyThemes: aiAnalysis.keyThemes,
+            sentimentStrength: aiAnalysis.sentimentStrength,
+            confidence: aiAnalysis.confidence,
+          },
+          update: {
+            bullishPercent: aiAnalysis.bullishPercent,
+            bearishPercent: aiAnalysis.bearishPercent,
+            neutralPercent: aiAnalysis.neutralPercent,
+            companyNewsScore,
+            articleCount: articles.length,
+            summary: aiAnalysis.summary,
+            keyThemes: aiAnalysis.keyThemes,
+            sentimentStrength: aiAnalysis.sentimentStrength,
+            confidence: aiAnalysis.confidence,
+          },
+        });
+
+        // Store individual articles (upsert to handle duplicates)
+        const articlesToStore = articles.slice(0, 20); // Keep top 20 per stock
+        for (const article of articlesToStore) {
+          await db.newsArticle.upsert({
+            where: {
+              symbol_url: { symbol, url: article.url },
+            },
+            create: {
+              symbol,
+              headline: article.headline,
+              summary: article.summary || null,
+              source: article.source,
+              url: article.url,
+              imageUrl: article.image || null,
+              publishedAt: new Date(article.datetime * 1000), // Convert UNIX timestamp
+            },
+            update: {
+              headline: article.headline,
+              summary: article.summary || null,
+            },
+          });
+        }
+
+        results.push({
+          symbol,
+          success: true,
+          articleCount: articlesToStore.length
+        });
+
+        // Rate limiting: Finnhub allows 60 calls/min
+        // We make 1 call per symbol (company-news), so wait 1 second between symbols
+        // This allows ~60 symbols per minute, safe margin
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      } catch (error) {
+        logger.error(`Error processing ${symbol}:`, { error: String(error) });
+        results.push({ symbol, success: false, error: String(error) });
+      }
+    }
+
+    // 3. Log summary
+    const successful = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
+
+    logger.info(
+      `News sentiment refresh complete: ${successful} succeeded, ${failed} failed`
+    );
+
+    return {
+      processed: results.length,
+      successful,
+      failed,
+      results,
+    };
+  }
+);
+
+/**
+ * Cleans up old news articles to prevent database bloat.
+ *
+ * Runs daily at 3 AM UTC.
+ * Deletes NewsArticle records older than 7 days.
+ */
+export const cleanupOldNewsFunction = inngest.createFunction(
+  {
+    id: "cleanup-old-news",
+    retries: 1,
+  },
+  { cron: "0 3 * * *" }, // Every day at 3 AM UTC
+  async ({ logger }) => {
+    logger.info("Starting old news cleanup job");
+
+    // Calculate cutoff date (7 days ago)
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - 7);
+
+    // Delete old articles
+    const deleted = await db.newsArticle.deleteMany({
+      where: {
+        publishedAt: { lt: cutoffDate },
+      },
+    });
+
+    logger.info(`Deleted ${deleted.count} news articles older than 7 days`);
+
+    return {
+      deletedCount: deleted.count,
+      cutoffDate: cutoffDate.toISOString(),
+    };
+  }
+);
+
 // Export all functions as an array for the serve() handler
-export const functions = [analyzePostFunction, refreshTrendingFunction];
+export const functions = [analyzePostFunction, refreshTrendingFunction, refreshNewsSentimentFunction, cleanupOldNewsFunction];

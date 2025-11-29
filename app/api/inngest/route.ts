@@ -15,7 +15,12 @@
 
 import { serve } from "inngest/next";
 import { inngest } from "@/lib/inngest";
-import { functions } from "@/lib/inngest/functions";
+import {
+  analyzePostFunction,
+  refreshTrendingFunction,
+  refreshNewsSentimentFunction,
+  cleanupOldNewsFunction,
+} from "@/lib/inngest/functions";
 
 // serve() creates the handlers for GET, POST, and PUT
 // - GET: Returns function metadata (for discovery)
@@ -23,5 +28,10 @@ import { functions } from "@/lib/inngest/functions";
 // - PUT: Used for function registration
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions,
+  functions: [
+    analyzePostFunction,
+    refreshTrendingFunction,
+    refreshNewsSentimentFunction,
+    cleanupOldNewsFunction,
+  ],
 });
