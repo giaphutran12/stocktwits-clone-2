@@ -127,3 +127,49 @@ model TrendingCache {
   data      Json     // Array of { symbol: string, count: number }
   updatedAt DateTime @updatedAt
 }
+
+// ============================================
+// NEWS SENTIMENT FEATURE
+// ============================================
+
+enum NewsSentiment {
+  BULLISH
+  BEARISH
+  NEUTRAL
+  MIXED
+}
+
+model NewsArticle {
+  id          String   @id @default(cuid())
+  symbol      String
+  headline    String
+  summary     String?  @db.Text
+  source      String
+  url         String
+  imageUrl    String?
+  publishedAt DateTime
+  sentiment   NewsSentiment?
+  createdAt   DateTime @default(now())
+
+  @@index([symbol, publishedAt])
+  @@unique([symbol, url])
+}
+
+model NewsSentimentCache {
+  id                 String   @id @default(cuid())
+  symbol             String   @unique
+  bullishPercent     Float
+  bearishPercent     Float
+  neutralPercent     Float
+  companyNewsScore   Float
+  articleCount       Int
+  summary            String?  @db.Text
+  keyThemes          Json?
+  sentimentStrength  String?
+  confidence         String?
+  lastUpdated        DateTime @updatedAt
+  createdAt          DateTime @default(now())
+
+  @@index([symbol])
+  @@index([lastUpdated])
+}

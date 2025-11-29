@@ -211,6 +211,13 @@ export type CommunitySentimentAnalysis = {
   confidence: "high" | "medium" | "low" | null;
 };
 
+export interface NewsSentimentAnalysis {
+  summary: string | null;
+  keyThemes: string[];
+  sentimentStrength: "strong" | "moderate" | "weak" | "mixed" | null;
+  confidence: "high" | "medium" | "low" | null;
+}
+
 // Valid values for validation
 const VALID_SENTIMENT_STRENGTHS = ["strong", "moderate", "weak", "mixed"];
 const VALID_CONFIDENCE_LEVELS = ["high", "medium", "low"];
@@ -409,4 +416,157 @@ function getNullCommunityAnalysis(): CommunitySentimentAnalysis {
     sentimentStrength: null,
     confidence: null,
   };
+}
+
+// ============================================================
+// NEWS SENTIMENT ANALYSIS
+// ============================================================
+
+/**
+ * Return type for analyzeNewsSentiment that includes Claude-calculated percentages
+ */
+export type NewsSentimentWithPercentages = NewsSentimentAnalysis & {
+  bullishPercent: number;
+  bearishPercent: number;
+  neutralPercent: number;
+};
+
+/**
+ * Analyzes news articles and calculates sentiment percentages using Claude.
+ *
+ * Why this approach:
+ * - Finnhub's /news-sentiment endpoint requires a PAID subscription (~$50/month)
+ * - The FREE tier only includes /company-news (headlines)
+ * - So we have Claude classify each headline and calculate percentages
+ *
+ * @param symbol - Stock ticker being analyzed
+ * @param articles - Array of news headlines with source and summary
+ * @returns AI analysis with summary, themes, strength, confidence, AND percentages
+ */
+export async function analyzeNewsSentiment(
+  symbol: string,
+  articles: Array<{ headline: string; summary: string | null; source: string }>
+): Promise<NewsSentimentWithPercentages> {
+  const nullResult: NewsSentimentWithPercentages = {
+    summary: null,
+    keyThemes: [],
+    sentimentStrength: null,
+    confidence: null,
+    bullishPercent: 0,
+    bearishPercent: 0,
+    neutralPercent: 0,
+  };
+
+  // Minimum 3 articles required for meaningful analysis
+  if (articles.length < 3) {
+    console.log(
+      `[Anthropic] Not enough articles for ${symbol} analysis ` +
+        `(got ${articles.length}, need 3)`
+    );
+    return nullResult;
+  }
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error("[Anthropic] Missing ANTHROPIC_API_KEY");
+    return nullResult;
+  }
+
+  // Format articles for the prompt (limit to 10 to control token usage)
+  const articleList = articles
+    .slice(0, 10)
+    .map((a, i) => {
+      const summarySnippet = a.summary
+        ? `\n   ${a.summary.slice(0, 200)}...`
+        : "";
+      return `${i + 1}. [${a.source}] ${a.headline}${summarySnippet}`;
+    })
+    .join("\n");
+
+  const systemPrompt = `You are a financial news analyst specializing in stock sentiment analysis.
+
+Your task: Analyze recent news coverage for ${symbol} and:
+1. Classify EACH headline as BULLISH, BEARISH, or NEUTRAL
+2. Calculate the percentage breakdown from your classifications
+3. Provide insights about media sentiment
+
+Classification guidelines:
+- BULLISH: Positive news (beats, upgrades, launches, growth, partnerships)
+- BEARISH: Negative news (misses, downgrades, layoffs, lawsuits, risks)
+- NEUTRAL: Factual reporting without clear positive/negative slant
+
+Respond ONLY with valid JSON in this exact format:
+{
+  "bullishPercent": <number 0-100>,
+  "bearishPercent": <number 0-100>,
+  "neutralPercent": <number 0-100>,
+  "summary": "2-3 sentence overview of media sentiment and key narratives",
+  "keyThemes": ["Theme 1", "Theme 2", "Theme 3"],
+  "sentimentStrength": "strong|moderate|weak|mixed",
+  "confidence": "high|medium|low"
+}
+
+IMPORTANT: bullishPercent + bearishPercent + neutralPercent MUST equal 100.
+
+Guidelines for each field:
+- bullishPercent/bearishPercent/neutralPercent: Calculate from your headline classifications
+- summary: What are major outlets saying? Focus on WHY sentiment is positive/negative.
+- keyThemes: Top 3 topics driving coverage (e.g., "Earnings Beat", "Product Launch", "Regulatory Risk")
+- sentimentStrength:
+  - "strong" = >70% articles lean one direction
+  - "moderate" = 50-70% lean one direction
+  - "weak" = <50% clear direction
+  - "mixed" = significant coverage on both sides
+- confidence:
+  - "high" = many articles with consistent messaging
+  - "medium" = moderate article count or some disagreement
+  - "low" = few articles or highly mixed messaging`;
+
+  const userPrompt = `Analyze these recent news headlines for ${symbol}:\n\n${articleList}`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 400, // Increased slightly for percentages
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
+    });
+
+    // Extract text content from response
+    const textContent = response.content.find((block) => block.type === "text");
+    if (!textContent || textContent.type !== "text") {
+      throw new Error("No text content in Claude response");
+    }
+
+    // Parse JSON from response (handles markdown code blocks too)
+    const jsonMatch = textContent.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error("No JSON found in Claude response");
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    // Validate percentages (must be numbers, default to 0)
+    const bullishPercent = typeof parsed.bullishPercent === "number" ? Math.round(parsed.bullishPercent) : 0;
+    const bearishPercent = typeof parsed.bearishPercent === "number" ? Math.round(parsed.bearishPercent) : 0;
+    const neutralPercent = typeof parsed.neutralPercent === "number" ? Math.round(parsed.neutralPercent) : 0;
+
+    // Normalize percentages to ensure they sum to 100
+    const total = bullishPercent + bearishPercent + neutralPercent;
+    const normalizedBullish = total > 0 ? Math.round((bullishPercent / total) * 100) : 34;
+    const normalizedBearish = total > 0 ? Math.round((bearishPercent / total) * 100) : 33;
+    const normalizedNeutral = 100 - normalizedBullish - normalizedBearish; // Ensure exactly 100
+
+    return {
+      summary: validateSummary(parsed.summary),
+      keyThemes: validateKeyThemes(parsed.keyThemes),
+      sentimentStrength: validateSentimentStrength(parsed.sentimentStrength),
+      confidence: validateConfidence(parsed.confidence),
+      bullishPercent: normalizedBullish,
+      bearishPercent: normalizedBearish,
+      neutralPercent: normalizedNeutral,
+    };
+  } catch (error) {
+    console.error("[Anthropic] Error analyzing news sentiment:", error);
+    return nullResult;
+  }
 }
