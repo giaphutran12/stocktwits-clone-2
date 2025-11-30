@@ -557,7 +557,7 @@ Guidelines for each field:
     const normalizedNeutral = 100 - normalizedBullish - normalizedBearish; // Ensure exactly 100
 
     return {
-      summary: validateSummary(parsed.summary),
+      summary: validateCommunitySummary(parsed.summary), // Use 300 char limit (not 150)
       keyThemes: validateKeyThemes(parsed.keyThemes),
       sentimentStrength: validateSentimentStrength(parsed.sentimentStrength),
       confidence: validateConfidence(parsed.confidence),
