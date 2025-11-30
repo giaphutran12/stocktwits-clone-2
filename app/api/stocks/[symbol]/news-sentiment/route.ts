@@ -52,7 +52,59 @@ export async function GET(
       const articles = await getCompanyNews(upperSymbol, 7);
 
       // Need at least 3 articles for meaningful analysis
+      // FALLBACK: If not enough articles, use stale cache if available
       if (articles.length < 3) {
+        console.log(
+          `[News Sentiment API] Not enough articles for ${upperSymbol} (${articles.length}), checking for stale cache fallback`
+        );
+
+        // Check if we have cached data to fall back to
+        if (cached) {
+          console.log(
+            `[News Sentiment API] Using stale cache for ${upperSymbol} (last updated: ${cached.lastUpdated.toISOString()})`
+          );
+
+          // Fetch recent articles from database (they may be old but still useful)
+          const recentArticles = await db.newsArticle.findMany({
+            where: { symbol: upperSymbol },
+            orderBy: { publishedAt: "desc" },
+            take: 5,
+            select: {
+              id: true,
+              headline: true,
+              source: true,
+              url: true,
+              imageUrl: true,
+              publishedAt: true,
+              sentiment: true,
+            },
+          });
+
+          // Return stale cache with isStale flag
+          return NextResponse.json({
+            symbol: upperSymbol,
+            available: true,
+            isStale: true,
+            staleReason: `Not enough recent news articles (${articles.length} found, 3 required). Showing previous analysis.`,
+            breakdown: {
+              bullish: { percentage: cached.bullishPercent },
+              bearish: { percentage: cached.bearishPercent },
+              neutral: { percentage: cached.neutralPercent },
+            },
+            companyNewsScore: cached.companyNewsScore,
+            articleCount: cached.articleCount,
+            aiAnalysis: {
+              summary: cached.summary,
+              keyThemes: cached.keyThemes,
+              sentimentStrength: cached.sentimentStrength,
+              confidence: cached.confidence,
+            },
+            recentArticles,
+            lastUpdated: cached.lastUpdated.toISOString(),
+          });
+        }
+
+        // No cache available at all - show unavailable message
         return NextResponse.json({
           symbol: upperSymbol,
           available: false,
