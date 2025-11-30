@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getCompanyNews } from "@/lib/finnhub";
-import { analyzeNewsSentiment } from "@/lib/anthropic";
+import { getCompanyNews, FinnhubConfigError, FinnhubAPIError } from "@/lib/finnhub";
+import { analyzeNewsSentiment, AnthropicConfigError, AnthropicAPIError } from "@/lib/anthropic";
 
 // Required for Anthropic SDK (can't run on Edge runtime)
 export const runtime = "nodejs";
@@ -225,6 +225,58 @@ export async function GET(
 
   } catch (error) {
     console.error("[News Sentiment API] Error:", error);
+
+    // Handle specific error types with user-friendly messages
+    if (error instanceof FinnhubConfigError) {
+      return NextResponse.json(
+        {
+          error: "News service not configured",
+          details: error.message,
+          configError: true,
+          service: "finnhub",
+        },
+        { status: 503 } // Service Unavailable
+      );
+    }
+
+    if (error instanceof FinnhubAPIError) {
+      return NextResponse.json(
+        {
+          error: "News service error",
+          details: error.message,
+          apiError: true,
+          service: "finnhub",
+          statusCode: error.statusCode,
+        },
+        { status: 502 } // Bad Gateway
+      );
+    }
+
+    if (error instanceof AnthropicConfigError) {
+      return NextResponse.json(
+        {
+          error: "AI analysis service not configured",
+          details: error.message,
+          configError: true,
+          service: "anthropic",
+        },
+        { status: 503 } // Service Unavailable
+      );
+    }
+
+    if (error instanceof AnthropicAPIError) {
+      return NextResponse.json(
+        {
+          error: "AI analysis failed",
+          details: error.message,
+          apiError: true,
+          service: "anthropic",
+        },
+        { status: 502 } // Bad Gateway
+      );
+    }
+
+    // Generic error fallback
     return NextResponse.json(
       { error: "Failed to fetch news sentiment", details: String(error) },
       { status: 500 }

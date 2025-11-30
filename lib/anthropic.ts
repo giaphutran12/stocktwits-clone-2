@@ -6,6 +6,24 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 
+// ============================================
+// CUSTOM ERRORS (for better debugging)
+// ============================================
+
+export class AnthropicConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AnthropicConfigError";
+  }
+}
+
+export class AnthropicAPIError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AnthropicAPIError";
+  }
+}
+
 // Initialize the Anthropic client
 // The SDK automatically reads ANTHROPIC_API_KEY from environment
 const anthropic = new Anthropic();
@@ -467,8 +485,10 @@ export async function analyzeNewsSentiment(
   }
 
   if (!process.env.ANTHROPIC_API_KEY) {
-    console.error("[Anthropic] Missing ANTHROPIC_API_KEY");
-    return nullResult;
+    console.error("[Anthropic] CRITICAL: Missing ANTHROPIC_API_KEY environment variable");
+    throw new AnthropicConfigError(
+      "ANTHROPIC_API_KEY is not configured. Add it to your environment variables."
+    );
   }
 
   // Format articles for the prompt (limit to 10 to control token usage)
@@ -566,7 +586,14 @@ Guidelines for each field:
       neutralPercent: normalizedNeutral,
     };
   } catch (error) {
+    // Re-throw config errors so callers can handle them
+    if (error instanceof AnthropicConfigError) {
+      throw error;
+    }
+    // Log and wrap other errors
     console.error("[Anthropic] Error analyzing news sentiment:", error);
-    return nullResult;
+    throw new AnthropicAPIError(
+      `Failed to analyze news sentiment: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
