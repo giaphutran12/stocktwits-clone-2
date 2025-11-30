@@ -12,6 +12,7 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +38,8 @@ interface NewsSentimentData {
   symbol: string;
   available: boolean;
   message?: string;
+  isStale?: boolean; // True when using cached data because not enough fresh articles
+  staleReason?: string; // Explanation of why data is stale
   breakdown?: {
     bullish: { percentage: number };
     bearish: { percentage: number };
@@ -251,6 +254,19 @@ export function NewsSentiment({ symbol }: NewsSentimentProps) {
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/* Stale Data Notice */}
+        {data.isStale && (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
+            <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <div>
+              <span className="font-medium">Using cached analysis</span>
+              {data.staleReason && (
+                <p className="mt-0.5 text-xs opacity-80">{data.staleReason}</p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Sentiment Overview Card */}
         <div
           className={cn(
