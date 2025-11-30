@@ -12,6 +12,24 @@
 const FINNHUB_BASE_URL = "https://finnhub.io/api/v1";
 
 // ============================================
+// CUSTOM ERRORS (for better debugging)
+// ============================================
+
+export class FinnhubConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FinnhubConfigError";
+  }
+}
+
+export class FinnhubAPIError extends Error {
+  constructor(message: string, public statusCode?: number) {
+    super(message);
+    this.name = "FinnhubAPIError";
+  }
+}
+
+// ============================================
 // TYPES
 // ============================================
 
@@ -87,8 +105,10 @@ export async function getCompanyNews(
   const apiKey = process.env.FINNHUB_API_KEY;
 
   if (!apiKey) {
-    console.error("[Finnhub] Missing FINNHUB_API_KEY environment variable");
-    return [];
+    console.error("[Finnhub] CRITICAL: Missing FINNHUB_API_KEY environment variable");
+    throw new FinnhubConfigError(
+      "FINNHUB_API_KEY is not configured. Add it to your environment variables."
+    );
   }
 
   const upperSymbol = symbol.toUpperCase();
@@ -146,10 +166,12 @@ async function fetchNewsForTicker(
     if (!response.ok) {
       if (response.status === 429) {
         console.error("[Finnhub] Rate limit exceeded (60 calls/min)");
+        throw new FinnhubAPIError("Finnhub rate limit exceeded (60 calls/min). Try again later.", 429);
       } else if (response.status === 401) {
         console.error("[Finnhub] Invalid API key");
+        throw new FinnhubAPIError("Invalid Finnhub API key. Check your FINNHUB_API_KEY.", 401);
       }
-      throw new Error(`Finnhub API error: ${response.status}`);
+      throw new FinnhubAPIError(`Finnhub API error: ${response.status}`, response.status);
     }
 
     const articles: FinnhubNewsArticle[] = await response.json();
@@ -160,8 +182,13 @@ async function fetchNewsForTicker(
 
     return articles;
   } catch (error) {
+    // Re-throw our custom errors so callers can handle them
+    if (error instanceof FinnhubConfigError || error instanceof FinnhubAPIError) {
+      throw error;
+    }
+    // Network errors or other unexpected errors
     console.error("[Finnhub] Error fetching company news:", error);
-    return [];
+    throw new FinnhubAPIError(`Network error fetching news: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -188,8 +215,10 @@ export async function getNewsSentiment(
   const apiKey = process.env.FINNHUB_API_KEY;
 
   if (!apiKey) {
-    console.error("[Finnhub] Missing FINNHUB_API_KEY environment variable");
-    return null;
+    console.error("[Finnhub] CRITICAL: Missing FINNHUB_API_KEY environment variable");
+    throw new FinnhubConfigError(
+      "FINNHUB_API_KEY is not configured. Add it to your environment variables."
+    );
   }
 
   const url = `${FINNHUB_BASE_URL}/news-sentiment?symbol=${symbol.toUpperCase()}&token=${apiKey}`;
