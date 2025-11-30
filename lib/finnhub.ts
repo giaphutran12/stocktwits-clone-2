@@ -44,11 +44,33 @@ export interface FinnhubNewsSentiment {
 }
 
 // ============================================
+// TICKER ALIASES
+// ============================================
+
+/**
+ * Some companies have multiple ticker symbols (share classes) with different
+ * news coverage in Finnhub. This maps to fallback tickers when primary has
+ * insufficient articles.
+ *
+ * Example: Google has GOOG (Class C) and GOOGL (Class A). Finnhub has more
+ * news coverage for GOOGL, so we try GOOGL if GOOG returns too few articles.
+ */
+const TICKER_FALLBACKS: Record<string, string> = {
+  "GOOG": "GOOGL",   // Google Class C → try Class A
+  "GOOGL": "GOOG",   // Google Class A → try Class C
+  "BRK.A": "BRK.B",  // Berkshire Class A → try Class B
+  "BRK.B": "BRK.A",  // Berkshire Class B → try Class A
+};
+
+// ============================================
 // API FUNCTIONS
 // ============================================
 
 /**
  * Fetches recent news articles for a stock symbol.
+ *
+ * Includes fallback logic for dual-class stocks (e.g., GOOG/GOOGL).
+ * If the primary ticker returns < 3 articles, tries the fallback ticker.
  *
  * @param symbol - Stock ticker (e.g., "AAPL", "TSLA")
  * @param daysBack - Number of days to look back (default: 7)
@@ -69,6 +91,39 @@ export async function getCompanyNews(
     return [];
   }
 
+  const upperSymbol = symbol.toUpperCase();
+
+  // Try primary ticker first
+  const articles = await fetchNewsForTicker(upperSymbol, daysBack, apiKey);
+
+  // If insufficient articles, try fallback ticker (e.g., GOOG → GOOGL)
+  const MIN_ARTICLES = 3;
+  if (articles.length < MIN_ARTICLES && TICKER_FALLBACKS[upperSymbol]) {
+    const fallbackSymbol = TICKER_FALLBACKS[upperSymbol];
+    console.log(
+      `[Finnhub] ${upperSymbol} has only ${articles.length} articles, trying fallback: ${fallbackSymbol}`
+    );
+    const fallbackArticles = await fetchNewsForTicker(fallbackSymbol, daysBack, apiKey);
+
+    if (fallbackArticles.length > articles.length) {
+      console.log(
+        `[Finnhub] Fallback ${fallbackSymbol} has ${fallbackArticles.length} articles - using fallback`
+      );
+      return fallbackArticles;
+    }
+  }
+
+  return articles;
+}
+
+/**
+ * Internal helper to fetch news for a single ticker.
+ */
+async function fetchNewsForTicker(
+  symbol: string,
+  daysBack: number,
+  apiKey: string
+): Promise<FinnhubNewsArticle[]> {
   // Calculate date range (YYYY-MM-DD format required by Finnhub)
   const toDate = new Date();
   const fromDate = new Date();
@@ -77,7 +132,7 @@ export async function getCompanyNews(
   const from = fromDate.toISOString().split("T")[0];
   const to = toDate.toISOString().split("T")[0];
 
-  const url = `${FINNHUB_BASE_URL}/company-news?symbol=${symbol.toUpperCase()}&from=${from}&to=${to}&token=${apiKey}`;
+  const url = `${FINNHUB_BASE_URL}/company-news?symbol=${symbol}&from=${from}&to=${to}&token=${apiKey}`;
 
   try {
     console.log(`[Finnhub] Fetching news for ${symbol}...`);
